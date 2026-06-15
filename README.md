@@ -102,6 +102,8 @@ distinct families of modules:
 
 Every playbook here uses `cisco.catalystcenter.swim_workflow_manager` (and
 `inventory_workflow_manager` / `network_compliance_workflow_manager` for supporting phases).
+Full parameter reference and annotated examples are available in the
+[`swim_workflow_manager` module documentation on Ansible Galaxy](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/).
 Workflow Manager modules give us:
 
 - **Declarative `config:`** — you pass the same data structures the Catalyst Center GUI builds
@@ -129,7 +131,11 @@ encrypted vault.
 ## 3. Mapping SWIM operations to workflow modules
 
 Each SWIM stage from [§1.3](#13-the-upgrade-lifecycle) maps to a specific Workflow Manager module
-invocation. The table below is the Rosetta Stone for this repository:
+invocation. The table below is the Rosetta Stone for this repository. See the
+[`swim_workflow_manager` module docs](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/)
+for the full parameter schema and the
+[annotated examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)
+for each `config:` sub-key.
 
 | SWIM operation | Module | `config:` key | Playbook |
 |---|---|---|---|
@@ -334,6 +340,9 @@ idempotent (except activation/rollback, which reboot devices).
 
 Idempotent: an already-imported image or already-golden tag returns `ok`.
 
+> **Module reference:**
+> [`swim_workflow_manager` — `import_image_details` / `tagging_details` examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)
+
 ### 8.3 `20_distribute.yml` — stage the binary (no reload)
 
 **Purpose:** copy the image to device flash with **zero service impact**.
@@ -343,6 +352,9 @@ Loops `swim_details.distribute_images`, passing `image_distribution_details` (ta
 auto-cleanup, reachability, checksum) and copies the image. Devices keep running their current
 image. Safe to run during business hours.
 
+> **Module reference:**
+> [`swim_workflow_manager` — `image_distribution_details` examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)
+
 ### 8.4 `30_activate.yml` — activate (reloads devices)
 
 **Purpose:** make the new image the running image. **This reboots devices** — run inside a
@@ -351,6 +363,9 @@ maintenance window.
 Loops `swim_details.activate_images`, passing `image_activation_details` with
 `distribute_if_needed: true` (distributes first if needed) and `schedule_validate: true`. Uses an
 extended timeout (`7200s`) and poll interval (`60s`) to accommodate reloads.
+
+> **Module reference:**
+> [`swim_workflow_manager` — `image_activation_details` examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)
 
 #### IOS-XE install-mode three-step sequence
 
@@ -394,6 +409,9 @@ asserts the workflow executed successfully. The *after* snapshot to compare agai
 ### 8.6 `35_rollback.yml` — return to prior-stable (reloads devices)
 
 **Purpose:** recover from a bad upgrade by activating the previously known-good image.
+
+> **Module reference:**
+> [`swim_workflow_manager` — rollback (`activate_lower_image_version: true`) examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)
 
 Guarded by **two explicit confirmation gates** — the play refuses to run without both:
 
