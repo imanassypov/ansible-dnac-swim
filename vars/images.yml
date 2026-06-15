@@ -46,6 +46,38 @@ swim_details:
               is_third_party: false
 
   # --------------------------------------------------------------------------
+  # ALTERNATIVE: import directly from Cisco.com (CCO) instead of a local file
+  # server. Requires a valid cisco.com account configured in CatC under
+  # System > Settings > Cisco.com Credentials.
+  # Ref: https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples
+  #
+  # Single image from CCO:
+  #
+  #   - name: cat9kv_from_cco
+  #     import_image_details:
+  #       type: CCO
+  #       cco_image_details:
+  #         image_name: cat9k_iosxe.17.15.03.SPA.bin
+  #
+  # Multiple images from CCO in one entry:
+  #
+  #   - name: cat9kv_bulk_from_cco
+  #     import_image_details:
+  #       type: CCO
+  #       cco_image_details:
+  #         image_name:
+  #           - cat9k_iosxe.17.15.03.SPA.bin
+  #           - cat9kv-universalk9.BLD_V262_THROTTLE_LATEST_20260529_003538.SSA.bin
+  #
+  # Notes:
+  #   - 'type: CCO' vs 'type: remote' — CCO pulls from cisco.com; remote pulls
+  #     from an HTTP/FTP URL you control (used above for lab).
+  #   - Only the latest Cisco-recommended images are available via CCO.
+  #   - Engineering/throttle builds (e.g. BLD_V262_THROTTLE_*) are NOT published
+  #     to CCO — they must be imported via 'type: remote' or 'type: local'.
+  # --------------------------------------------------------------------------
+
+  # --------------------------------------------------------------------------
   # GOLDEN TAG: mark the upgrade image as golden for a specific site and role.
   # device_image_family_name must be the CatC SWIM device-family IDENTIFIER,
   # NOT the inventory family/series. On this cluster:
