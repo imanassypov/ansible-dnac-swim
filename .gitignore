@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.retry
+
+.ansible/
+collections/
+
+.vault_pass*
+group_vars/catc/vault.yml.bak
+
+logs/*.json
+logs/*.log
+!logs/.gitkeep
