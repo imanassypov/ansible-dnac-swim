@@ -15,6 +15,9 @@ Validated against **Cisco Catalyst Center 2.3.7.6** with `cisco.catalystcenter` 
 
 1. [SWIM on Catalyst Center — methodology](#1-swim-on-catalyst-center--methodology)
 2. [The Cisco Catalyst Center Ansible collection](#2-the-cisco-catalyst-center-ansible-collection)
+   - [2.1 Installation](#21-installation)
+   - [2.2 Module families](#22-module-families)
+   - [2.3 Why Workflow Manager modules](#23-why-workflow-manager-modules)
 3. [Mapping SWIM operations to workflow modules](#3-mapping-swim-operations-to-workflow-modules)
 4. [Repository layout](#4-repository-layout)
 5. [Install dependencies](#5-install-dependencies)
@@ -108,7 +111,31 @@ It ships two distinct families of modules:
   to reach it. These are the modules Cisco recommends for day-2 operations, and the ones this
   repository is built on.
 
-### 2.1 Why Workflow Manager modules
+### 2.1 Installation
+
+Install the collection from Ansible Galaxy:
+
+```bash
+ansible-galaxy collection install cisco.catalystcenter
+```
+
+Install the required Python SDK (needed by every module at runtime):
+
+```bash
+pip install catalystcentersdk
+```
+
+> **Python version:** `catalystcentersdk` requires **Python ≥ 3.12**. Build your virtualenv with a
+> 3.12+ interpreter. Pin the exact collection version for reproducible automation:
+>
+> ```bash
+> ansible-galaxy collection install cisco.catalystcenter:==2.9.0
+> ```
+>
+> or declare it in a `requirements.yml` and install with
+> `ansible-galaxy collection install -r requirements.yml`.
+
+### 2.3 Why Workflow Manager modules
 
 Every playbook here uses `cisco.catalystcenter.swim_workflow_manager` (and
 `inventory_workflow_manager` / `network_compliance_workflow_manager` for supporting phases).
@@ -127,7 +154,7 @@ Workflow Manager modules give us:
 - **Idempotency** — re-running a play that imports an already-present image, or tags an
   already-golden image, reports `ok` instead of failing or duplicating work.
 
-### 2.2 Connection model
+### 2.4 Connection model
 
 Catalyst Center modules run with `connection: local` against the control node — Ansible talks to
 the Catalyst Center REST API over HTTPS; there is no SSH to the appliance. A single placeholder
