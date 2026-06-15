@@ -160,6 +160,13 @@ the entire multi-step API interaction to reach it.
 - **Comprehensive error handling** — surfaces per-device failure detail, skipped devices, and
   task-level errors as structured Ansible output suitable for downstream `assert` or evidence tasks
 
+The coverage spans three domains — Base Automation, SDA Fabric, and Operations — across all major
+industry verticals. **SWIM** falls under the **Operations** domain, covering golden image tagging
+per site/role/device and the full update process (import → tag → distribute → activate →
+postcheck).
+
+![Cisco Validated Ansible Workflows Coverage](images/cisco.catalystcenter.workflows.coverage.png)
+
 ### 2.3 Why Workflow Manager modules
 
 Every playbook here uses `cisco.catalystcenter.swim_workflow_manager` (and
