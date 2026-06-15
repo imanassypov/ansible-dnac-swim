@@ -25,6 +25,7 @@ Validated against **Cisco Catalyst Center 2.3.7.6** with `cisco.catalystcenter` 
 10. [Evidence and logging](#10-evidence-and-logging)
 11. [Troubleshooting](#11-troubleshooting)
 12. [Appendix A: Image distribution (HTTP) server setup](#appendix-a-image-distribution-http-server-setup)
+13. [Appendix B: Alternative approach — individual API modules (no Workflow Manager)](#appendix-b-alternative-approach--individual-api-modules-no-workflow-manager)
 
 ---
 
@@ -421,6 +422,216 @@ ansible-playbook playbooks/35_rollback.yml \
 | Activation times out | Reload exceeds default timeout | Confirm the phase uses the extended `catalystcenter_api_task_timeout: 7200`. |
 | Compliance check skips devices | Devices unreachable or not fully managed | Re-run `00_preflight.yml` to resync; inspect `skipped_devices` in the evidence JSON. |
 | `catalystcentersdk` import error | Python < 3.12 | Rebuild the virtualenv with Python 3.12+. |
+
+---
+
+## Appendix B: Alternative approach — individual API modules (no Workflow Manager)
+
+The playbooks in this repository use `swim_workflow_manager` because it is the recommended,
+declarative path. However, the `cisco.catalystcenter` collection also ships lower-level,
+**individual API modules** — thin wrappers around single REST endpoints that expose every parameter
+explicitly. Understanding these modules deepens your knowledge of what the Workflow Manager
+actually orchestrates under the hood, and is essential if you need fine-grained control (e.g.
+per-device targeting, custom scheduling, or integration with an external ITSM workflow).
+
+This appendix describes how to rebuild the same pipeline using individual modules while keeping
+**the same `vars/images.yml` data model** as the source of truth.
+
+---
+
+### B.1 Module families at a glance
+
+The collection ships two generations of individual SWIM modules:
+
+| Generation | Module pattern | API surface | Status |
+|---|---|---|---|
+| **Legacy (v1 API)** | `swim_import_via_url`, `swim_trigger_distribution`, `swim_trigger_activation`, `golden_image_create` | `/dna/intent/api/v1/...` | Available; works on 2.3.7.x |
+| **Modern (v2 API)** | `images_download`, `images_id_sites_site_id_tag_golden`, `network_device_images_id_distribute`, `network_device_images_id_activate` | `/dna/intent/api/v1/images/...` | Newer endpoint; added in CatC 2.3.7+ |
+
+Both generations require you to **manage ID resolution and task polling yourself** — what
+`swim_workflow_manager` absorbs internally you must now write explicitly.
+
+---
+
+### B.2 The additional orchestration burden
+
+With individual modules, every step that the Workflow Manager handles automatically becomes a
+task you own:
+
+| Responsibility | Workflow Manager | Individual modules |
+|---|---|---|
+| Look up `imageId` UUID from image name | ✅ Resolved internally | ❌ Must query `images_info` or `swim_image_details_info` |
+| Look up `siteId`, `deviceFamilyIdentifier` | ✅ Resolved internally | ❌ Must query site and family APIs |
+| Look up device UUIDs from site / family / series | ✅ Resolved internally | ❌ Must query `network_device_by_ip_info` or `intent_network_devices_query` |
+| Submit async task and poll until complete | ✅ Built-in (`catalystcenter_api_task_timeout`) | ❌ Must loop on `task_info` until `endTime` or `isError` |
+| Verify state after apply | ✅ `config_verify: true` | ❌ Must re-query and assert manually |
+| Idempotency (skip if already done) | ✅ Handled by module | ❌ Must guard with `when:` checks on info-module results |
+
+---
+
+### B.3 Sequence diagram — individual modules
+
+The diagram below maps each pipeline phase to the exact individual module(s) required, including
+the lookup and polling steps that the Workflow Manager hides:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PB as Ansible Playbook
+    participant CatC as Catalyst Center API
+    participant Dev as Devices (Floor 1)
+
+    rect rgb(230,240,255)
+        Note over PB,CatC: PHASE 00 — Preflight (resync + IMAGE compliance)
+        PB->>CatC: network_devices_resync_interval_settings_override<br/>(per site, force_sync)
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll until endTime set)
+        CatC-->>PB: task complete
+        PB->>CatC: compliance_device<br/>(deviceId list, categories=[IMAGE])
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll until endTime set)
+        PB->>CatC: compliance_device_details_info<br/>(filter by deviceId, complianceType=IMAGE)
+        CatC-->>PB: compliance results (status per device)
+    end
+
+    rect rgb(255,245,225)
+        Note over PB,CatC: PHASE 10 — Import image via URL
+        PB->>CatC: swim_import_via_url<br/>(sourceURL from import_images[].import_image_details)
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll until endTime / isError)
+        CatC-->>PB: task complete; image now in repository
+        PB->>CatC: swim_image_details_info or images_info<br/>(filter by name → resolve imageId UUID)
+        CatC-->>PB: imageId
+        PB->>CatC: golden_image_create<br/>(imageId, siteId, deviceFamilyIdentifier, deviceRole)<br/>from golden_tag_images[].tagging_details
+        CatC-->>PB: golden tag applied
+    end
+
+    rect rgb(230,255,235)
+        Note over PB,CatC: PHASE 20 — Distribute (install add, no reload)
+        PB->>CatC: swim_image_details_info<br/>(resolve imageId by name)
+        CatC-->>PB: imageId
+        PB->>CatC: intent_network_devices_query or network_device_by_ip_info<br/>(filter by site + family + series → resolve deviceId list)
+        CatC-->>PB: [deviceId, …]
+        PB->>CatC: swim_trigger_distribution<br/>(payload: [{deviceUuid, imageUuid}] per device)<br/>— OR — network_device_images_id_distribute<br/>(id=deviceId, distributedImages=[imageId])
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll until endTime / isError)
+        CatC-->>Dev: install add (no reload)
+        Dev-->>CatC: image staged
+    end
+
+    rect rgb(255,230,230)
+        Note over PB,CatC: PHASE 30 — Activate (install activate+commit, REBOOTS)
+        PB->>CatC: swim_image_details_info<br/>(resolve imageId by name)
+        CatC-->>PB: imageId
+        PB->>CatC: intent_network_devices_query<br/>(filter by site + family + series → deviceId list)
+        CatC-->>PB: [deviceId, …]
+        PB->>CatC: network_device_images_id_readiness_checks<br/>(id=deviceId, imageId) — pre-activation validation
+        CatC-->>PB: readiness status per device
+        PB->>CatC: swim_trigger_activation<br/>(payload: [{deviceUuid, imageUuidList, activateLowerImageVersion}])<br/>— OR — network_device_images_id_activate<br/>(id=deviceId, installedImages=[imageId])
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll; timeout ≥ 7200 s — devices reload)
+        CatC-->>Dev: install activate + install commit
+        Dev-->>CatC: reloaded on new image
+        CatC-->>PB: task complete
+    end
+
+    rect rgb(230,240,255)
+        Note over PB,CatC: PHASE 40 — Postcheck (IMAGE compliance)
+        PB->>CatC: compliance_device<br/>(deviceId list, categories=[IMAGE])
+        CatC-->>PB: taskId
+        PB->>CatC: task_info (poll until endTime)
+        PB->>CatC: compliance_device_details_info<br/>(filter complianceType=IMAGE)
+        CatC-->>PB: Compliant: 6 / 6
+    end
+```
+
+---
+
+### B.4 Phase-by-phase module reference
+
+#### Phase 00 — Preflight
+
+| Step | Module | Key parameters | Notes |
+|---|---|---|---|
+| Force device resync | `cisco.catalystcenter.network_devices_resync_interval_settings_override` | `id` (device UUID) | No direct `site_name` input — must resolve device UUIDs from site first using `network_device_by_ip_info` or `intent_network_devices_query` |
+| Poll resync task | `cisco.catalystcenter.task_info` | `task_id` | Loop with `until: result.dnacResponse.endTime is defined` |
+| Trigger IMAGE compliance | `cisco.catalystcenter.compliance_device` | `deviceUuids: [...]`, `complianceType: IMAGE` | Takes a list of device UUIDs — requires lookup first |
+| Poll compliance task | `cisco.catalystcenter.task_info` | `task_id` | |
+| Retrieve results | `cisco.catalystcenter.compliance_device_details_info` | `deviceUuid`, `complianceType: IMAGE` | Parse `status` field per device |
+
+#### Phase 10 — Import + golden tag
+
+| Step | Module | Key parameters | Notes |
+|---|---|---|---|
+| Import image from URL | `cisco.catalystcenter.swim_import_via_url` | `payload: [{sourceURL, urlType: GITHUB/HTTP}]` | `sourceURL` from `import_images[].import_image_details.url_path` |
+| Poll import task | `cisco.catalystcenter.task_info` | `task_id` | Import can take several minutes |
+| Resolve `imageId` by name | `cisco.catalystcenter.swim_image_details_info` | `name: "{{ image_name }}"` | Returns UUID needed for golden-tag call |
+| Resolve `siteId` | `cisco.catalystcenter.sites_info` or `site_by_name_info` | `name: "{{ site_name }}"` | Returns `siteId` UUID |
+| Apply golden tag | `cisco.catalystcenter.golden_image_create` | `imageId`, `siteId`, `deviceFamilyIdentifier`, `deviceRole` | `deviceFamilyIdentifier` = `999999901` for cat9kv; `deviceRole: ALL` |
+
+> **Alternative (v2 API):** `images_id_sites_site_id_tag_golden` — takes `id` (imageId) and
+> `siteId` path parameters directly, no `deviceFamilyIdentifier` needed at this layer.
+
+#### Phase 20 — Distribute
+
+| Step | Module | Key parameters | Notes |
+|---|---|---|---|
+| Resolve `imageId` | `cisco.catalystcenter.swim_image_details_info` | `name: "{{ image_name }}"` | |
+| Resolve device UUIDs by site/family/series | `cisco.catalystcenter.intent_network_devices_query` | `siteHierarchy`, `family`, `series` | Returns list of device UUIDs to loop over |
+| Trigger distribution (legacy) | `cisco.catalystcenter.swim_trigger_distribution` | `payload: [{deviceUuid, imageUuid}]` | Accepts a list — can bulk-submit all 6 devices in one call |
+| — or — trigger distribution (modern) | `cisco.catalystcenter.network_device_images_id_distribute` | `id` (deviceId), `distributedImages: [imageId]` | One call per device — loop required |
+| Poll distribution task | `cisco.catalystcenter.task_info` | `task_id` | Poll `GET /dna/intent/api/v1/networkDeviceImageUpdates?parentId={taskId}` via `network_device_image_updates_info` for per-device status |
+
+#### Phase 30 — Activate
+
+| Step | Module | Key parameters | Notes |
+|---|---|---|---|
+| Resolve `imageId` | `cisco.catalystcenter.swim_image_details_info` | `name: "{{ image_name }}"` | |
+| Resolve device UUIDs | `cisco.catalystcenter.intent_network_devices_query` | `siteHierarchy`, `family`, `series` | |
+| Pre-activation readiness check | `cisco.catalystcenter.network_device_images_id_readiness_checks` | `id` (deviceId), `imageId` | New v2 API — checks flash, NTP, reachability before activating |
+| Trigger activation (legacy) | `cisco.catalystcenter.swim_trigger_activation` | `payload: [{deviceUuid, imageUuidList, activateLowerImageVersion: false}]` | Reboots devices |
+| — or — trigger activation (modern) | `cisco.catalystcenter.network_device_images_id_activate` | `id` (deviceId), `installedImages: [imageId]` | Combines distribute+activate in one call if needed |
+| Poll activation task | `cisco.catalystcenter.task_info` | `task_id` | Extend poll timeout ≥ 7200 s; devices are offline during reload |
+
+#### Phase 40 — Postcheck
+
+Same as Phase 00 compliance steps — `compliance_device` + `task_info` + `compliance_device_details_info`. Assert `status == "COMPLIANT"` for all device UUIDs.
+
+---
+
+### B.5 Mapping `swim_details` keys to individual-module parameters
+
+The `vars/images.yml` `swim_details` keys map to individual-module parameters as follows —
+allowing you to reuse the same data model with minimal Jinja2 transformation:
+
+| `swim_details` key | Field | Maps to individual-module parameter |
+|---|---|---|
+| `import_images[].import_image_details` | `url_path` | `swim_import_via_url` → `payload[].sourceURL` |
+| `golden_tag_images[].tagging_details` | `site_name` | → resolve `siteId` via `sites_info` |
+| | `device_image_family_name` | → `deviceFamilyIdentifier` in `golden_image_create` (resolve via family-identifier API or hardcode `999999901`) |
+| | `device_role` | → `deviceRole` in `golden_image_create` |
+| `distribute_images[].image_distribution_details` | `image_name` | → resolve `imageId` via `swim_image_details_info` |
+| | `site_name` + `device_family_name` + `device_series_name` | → resolve `deviceId` list via `intent_network_devices_query` |
+| `activate_images[].image_activation_details` | `activate_lower_image_version` | → `swim_trigger_activation` payload `activateLowerImageVersion` |
+| | `distribute_if_needed` | → only applicable in `network_device_images_id_activate` (`installedImages` combines both) |
+
+---
+
+### B.6 Why this repository uses Workflow Manager instead
+
+| Consideration | Individual modules | `swim_workflow_manager` |
+|---|---|---|
+| Lines of playbook code | ~150–200 per phase (lookups + polling loops + guards) | ~30 per phase |
+| ID resolution | Manual (3–5 extra tasks per phase) | Automatic |
+| Task polling | Manual `until:` loop on `task_info` | Built-in |
+| Idempotency | Manual `when:` guards on info-module output | Built-in |
+| Readability | Low — imperative, stateful | High — declarative config blocks |
+| Debuggability | High — every API call visible | Medium — single module call |
+| Appropriate when | Fine-grained per-device logic, ITSM integration, custom scheduling | Standard bulk-site upgrade pipeline |
+
+> **Bottom line:** reach for individual modules when you need per-device branching logic,
+> dynamic scheduling decisions, or integration with an external state machine. For the standard
+> "upgrade this site to this image" use case, `swim_workflow_manager` is always the right choice.
 
 ---
 
