@@ -9,6 +9,4 @@ collections/
 .vault_pass*
 group_vars/catc/vault.yml.bak
 
-logs/*.json
-logs/*.log
-!logs/.gitkeep
+logs/
