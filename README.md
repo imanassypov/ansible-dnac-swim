@@ -16,7 +16,7 @@ Validated against **Cisco Catalyst Center 2.3.7.6** with `cisco.catalystcenter` 
 1. [SWIM on Catalyst Center — methodology](#1-swim-on-catalyst-center--methodology)
 2. [The Cisco Catalyst Center Ansible collection](#2-the-cisco-catalyst-center-ansible-collection)
    - [2.1 Installation](#21-installation)
-   - [2.2 Module families](#22-module-families)
+   - [2.2 Workflow Manager modules — high-level abstraction with data models](#22-workflow-manager-modules--high-level-abstraction-with-data-models)
    - [2.3 Why Workflow Manager modules](#23-why-workflow-manager-modules)
 3. [Mapping SWIM operations to workflow modules](#3-mapping-swim-operations-to-workflow-modules)
 4. [Repository layout](#4-repository-layout)
@@ -134,6 +134,31 @@ pip install catalystcentersdk
 >
 > or declare it in a `requirements.yml` and install with
 > `ansible-galaxy collection install -r requirements.yml`.
+
+### 2.2 Workflow Manager modules — high-level abstraction with data models
+
+The `*_workflow_manager` family (39 modules as of v2.9.0) provides a **declarative, data-model-driven**
+interface over the full Catalyst Center API surface. Rather than calling individual REST endpoints,
+you pass a structured `config:` data model that describes *desired state*, and the module handles
+the entire multi-step API interaction to reach it.
+
+[![cisco.catalystcenter workflow manager modules](images/cisco.catalystcenter.workflows.png)](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/)
+
+**Key benefits:**
+
+- **Declarative data models** — express intent (`import_image_details`, `tagging_details`,
+  `image_activation_details`) rather than imperative API calls; the module resolves all UUIDs and
+  endpoint routing internally
+- **Built-in task polling** — submits asynchronous Catalyst Center tasks and blocks until
+  completion, success, or configurable timeout (`catalystcenter_api_task_timeout`)
+- **Idempotency** — re-running against an already-converged state returns `ok: changed=false`
+  without issuing redundant API calls
+- **State verification** — `config_verify: true` re-reads Catalyst Center state post-apply to
+  confirm the change landed, not just that the API accepted the request
+- **Bulk and site-scoped operations** — target entire sites, device families, and roles in a single
+  `config:` entry rather than looping over individual device IPs
+- **Comprehensive error handling** — surfaces per-device failure detail, skipped devices, and
+  task-level errors as structured Ansible output suitable for downstream `assert` or evidence tasks
 
 ### 2.3 Why Workflow Manager modules
 
