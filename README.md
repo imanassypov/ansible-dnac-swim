@@ -352,6 +352,38 @@ Loops `swim_details.activate_images`, passing `image_activation_details` with
 `distribute_if_needed: true` (distributes first if needed) and `schedule_validate: true`. Uses an
 extended timeout (`7200s`) and poll interval (`60s`) to accommodate reloads.
 
+#### IOS-XE install-mode three-step sequence
+
+Catalyst Center drives the activation as three sequential CLI operations on each device,
+as documented in the
+[Catalyst Center 2.3.7 User Guide — View image update workflow](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/2-3-7/user_guide/b_cisco_catalyst_center_user_guide_237/b_cisco_dna_center_ug_2_3_7_chapter_0100.html):
+
+> *"For Cisco Catalyst 9000 Series Switches running on IOS-XE software, the software image is
+> upgraded in three steps: `install-add` (Distribution), `install-activate` (Activation), and
+> `install-commit` (Activation)."*
+>
+> *"If the device is in Inactive state, the `install-add` command is executed first.
+> Subsequently, the `install-activate` and `install-commit` commands are executed."*
+
+| CLI step | Phase | Device state after | Reboots? |
+|---|---|---|---|
+| `install add` | **Distribute** (phase 20) | `IMG I <new-version>` — Inactive | No |
+| `install activate` | **Activate** (phase 30) | `IMG U <new-version>` — Activated & Uncommitted | **Yes** |
+| `install commit` | **Activate** (phase 30, post-reload) | `IMG C <new-version>` — Activated & Committed | No |
+
+> **Important for `cat9kv` (virtual switches):** In some virtual/simulated environments,
+> Catalyst Center's activate task may report `SUCCESS` after submitting the `install-activate`
+> API call, before confirming that the device has actually reloaded. If `show install summary`
+> shows `IMG I` (Inactive) after the playbook completes with no errors, the `install-activate`
+> step did not trigger the reload. Manually run:
+>
+> ```
+> switch# install activate version <new-version>
+> switch# install commit
+> ```
+>
+> on each affected device, then proceed to phase 40.
+
 ### 8.5 `40_postcheck.yml` — post-activation compliance
 
 **Purpose:** confirm the upgrade achieved the golden state.
