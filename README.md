@@ -367,7 +367,7 @@ swim_details:
 |---|---|---|
 | `activate_lower_image_version` | `false` (upgrade) / `true` (rollback) | Allow activating an image *older* than what's running. Required for rollback. |
 | `distribute_if_needed` | `true` | If the image isn't already on the device, distribute it first as part of activation. |
-| `schedule_validate` | `true` | Run Catalyst Center's activation pre-validation before committing. |
+| `schedule_validate` | `false` | **Must be `false`** to trigger real activation. When `true`, CatC runs pre-validation only and the activation task returns `SUCCESS` immediately as a no-op — devices are never reloaded. |
 
 ### 7.3 Adding a site or role
 
@@ -430,8 +430,16 @@ image. Safe to run during business hours.
 maintenance window.
 
 Loops `swim_details.activate_images`, passing `image_activation_details` with
-`distribute_if_needed: true` (distributes first if needed) and `schedule_validate: true`. Uses an
-extended timeout (`7200s`) and poll interval (`60s`) to accommodate reloads.
+`distribute_if_needed: true` (distributes first if needed) and `schedule_validate: false`.
+Uses an extended timeout (`7200s`) and poll interval (`60s`) to accommodate reloads.
+
+> **Critical — `schedule_validate: false` is mandatory for real activation.**
+> When set to `true`, Catalyst Center interprets the request as a *pre-validation only* run:
+> the activation API task returns `SUCCESS` immediately without issuing `install activate`
+> to the device. Devices are never reloaded and remain in `IMG I` (Inactive) state.
+> Only `schedule_validate: false` causes CatC to proceed through the full
+> `install-activate` → reload → `install-commit` sequence.
+> This behaviour was confirmed via live SDK log analysis (`catc-swim.log`) on CatC 2.3.7.6.
 
 > **Module reference:**
 > [`swim_workflow_manager` — `image_activation_details` examples](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/content/module/swim_workflow_manager/?keywords=swim#examples)

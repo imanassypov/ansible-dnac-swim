@@ -119,8 +119,9 @@ swim_details:
         device_family_name: "Switches and Hubs"
         device_series_name: "Cisco Catalyst 9000 Series Virtual Switches"
         activate_lower_image_version: false
+        device_upgrade_mode: "install"
         distribute_if_needed: true
-        schedule_validate: true
+        schedule_validate: false
 
   # --------------------------------------------------------------------------
   # ROLLBACK: return devices to the prior-stable image (35_rollback.yml).
