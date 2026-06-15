@@ -522,78 +522,12 @@ task you own:
 ### B.3 Sequence diagram — individual modules
 
 The diagram below maps each pipeline phase to the exact individual module(s) required, including
-the lookup and polling steps that the Workflow Manager hides:
+the lookup and polling steps that the Workflow Manager hides.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant PB as Ansible Playbook
-    participant CatC as Catalyst Center API
-    participant Dev as Devices (Floor 1)
+![Individual modules sequence diagram](images/appendix-b-individual-modules-sequence.png)
 
-    rect rgb(230,240,255)
-        Note over PB,CatC: PHASE 00 — Preflight (resync + IMAGE compliance)
-        PB->>CatC: network_devices_resync_interval_settings_override<br/>(per site, force_sync)
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll until endTime set)
-        CatC-->>PB: task complete
-        PB->>CatC: compliance_device<br/>(deviceId list, categories=[IMAGE])
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll until endTime set)
-        PB->>CatC: compliance_device_details_info<br/>(filter by deviceId, complianceType=IMAGE)
-        CatC-->>PB: compliance results (status per device)
-    end
-
-    rect rgb(255,245,225)
-        Note over PB,CatC: PHASE 10 — Import image via URL
-        PB->>CatC: swim_import_via_url<br/>(sourceURL from import_images[].import_image_details)
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll until endTime / isError)
-        CatC-->>PB: task complete; image now in repository
-        PB->>CatC: swim_image_details_info or images_info<br/>(filter by name → resolve imageId UUID)
-        CatC-->>PB: imageId
-        PB->>CatC: golden_image_create<br/>(imageId, siteId, deviceFamilyIdentifier, deviceRole)<br/>from golden_tag_images[].tagging_details
-        CatC-->>PB: golden tag applied
-    end
-
-    rect rgb(230,255,235)
-        Note over PB,CatC: PHASE 20 — Distribute (install add, no reload)
-        PB->>CatC: swim_image_details_info<br/>(resolve imageId by name)
-        CatC-->>PB: imageId
-        PB->>CatC: intent_network_devices_query or network_device_by_ip_info<br/>(filter by site + family + series → resolve deviceId list)
-        CatC-->>PB: [deviceId, …]
-        PB->>CatC: swim_trigger_distribution<br/>(payload: [{deviceUuid, imageUuid}] per device)<br/>— OR — network_device_images_id_distribute<br/>(id=deviceId, distributedImages=[imageId])
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll until endTime / isError)
-        CatC-->>Dev: install add (no reload)
-        Dev-->>CatC: image staged
-    end
-
-    rect rgb(255,230,230)
-        Note over PB,CatC: PHASE 30 — Activate (install activate+commit, REBOOTS)
-        PB->>CatC: swim_image_details_info<br/>(resolve imageId by name)
-        CatC-->>PB: imageId
-        PB->>CatC: intent_network_devices_query<br/>(filter by site + family + series → deviceId list)
-        CatC-->>PB: [deviceId, …]
-        PB->>CatC: network_device_images_id_readiness_checks<br/>(id=deviceId, imageId) — pre-activation validation
-        CatC-->>PB: readiness status per device
-        PB->>CatC: swim_trigger_activation<br/>(payload: [{deviceUuid, imageUuidList, activateLowerImageVersion}])<br/>— OR — network_device_images_id_activate<br/>(id=deviceId, installedImages=[imageId])
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll; timeout ≥ 7200 s — devices reload)
-        CatC-->>Dev: install activate + install commit
-        Dev-->>CatC: reloaded on new image
-        CatC-->>PB: task complete
-    end
-
-    rect rgb(230,240,255)
-        Note over PB,CatC: PHASE 40 — Postcheck (IMAGE compliance)
-        PB->>CatC: compliance_device<br/>(deviceId list, categories=[IMAGE])
-        CatC-->>PB: taskId
-        PB->>CatC: task_info (poll until endTime)
-        PB->>CatC: compliance_device_details_info<br/>(filter complianceType=IMAGE)
-        CatC-->>PB: Compliant: 6 / 6
-    end
-```
+> Diagram source: [`images/appendix-b-individual-modules-sequence.mmd`](images/appendix-b-individual-modules-sequence.mmd)
+> — edit the `.mmd` file and re-run `mmdc` to update the PNG (see [Regenerating diagrams](#regenerating-diagrams)).
 
 ---
 
@@ -682,6 +616,27 @@ allowing you to reuse the same data model with minimal Jinja2 transformation:
 > **Bottom line:** reach for individual modules when you need per-device branching logic,
 > dynamic scheduling decisions, or integration with an external state machine. For the standard
 > "upgrade this site to this image" use case, `swim_workflow_manager` is always the right choice.
+
+---
+
+### Regenerating diagrams
+
+All Mermaid diagram sources live in [`images/`](images/) as `.mmd` files alongside their rendered
+PNGs. Regenerate after any logic or sequence change:
+
+```bash
+# Re-render and resize (enforces GitHub 4000 px / 1.2 MB limits)
+mmdc -i images/appendix-b-individual-modules-sequence.mmd \
+     -o images/appendix-b-individual-modules-sequence.png --scale 3
+/usr/bin/sips -Z 4000 images/appendix-b-individual-modules-sequence.png \
+              --out images/appendix-b-individual-modules-sequence.png
+
+# Verify dimensions and file size
+/usr/bin/sips -g pixelWidth -g pixelHeight images/appendix-b-individual-modules-sequence.png
+ls -lh images/appendix-b-individual-modules-sequence.png
+```
+
+Commit both the `.mmd` source and the regenerated `.png` together.
 
 ---
 
