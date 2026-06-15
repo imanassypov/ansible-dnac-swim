@@ -85,9 +85,19 @@ hosted image over HTTP during import. See [Appendix A](#appendix-a-image-distrib
 
 ## 2. The Cisco Catalyst Center Ansible collection
 
+[![cisco.catalystcenter on Ansible Galaxy](images/cisco.catalystcenter.collection.png)](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/)
+
 The [`cisco.catalystcenter`](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/)
-collection is Cisco's officially supported Ansible content for Catalyst Center. It ships two
-distinct families of modules:
+collection is Cisco's **officially supported** Ansible content for Catalyst Center, published on
+[Ansible Galaxy](https://galaxy.ansible.com/ui/repo/published/cisco/catalystcenter/) and
+[Red Hat Automation Hub](https://console.redhat.com/ansible/automation-hub/repo/published/cisco/catalystcenter/).
+
+> **Important:** `cisco.catalystcenter` is the **only** collection that will receive new features
+> and Catalyst Center version support going forward. The legacy `cisco.dnac` collection is
+> deprecated — all new development, bug fixes, and releases are delivered exclusively through
+> `cisco.catalystcenter`. Use `cisco.catalystcenter` for all new automation.
+
+It ships two distinct families of modules:
 
 - **SDK / "intent" modules** — thin, one-to-one wrappers around individual Catalyst Center Intent
   API endpoints (e.g. `swim_import_local`, `swim_trigger_distribution`). These are granular and
